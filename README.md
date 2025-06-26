@@ -1,44 +1,230 @@
-# Deepgram Live Transcriptions Example (JavaScript)
+# Multi-Model Speech-to-Text Comparison Tool
 
-ALPHA
+A real-time speech-to-text comparison application that simultaneously transcribes audio using multiple AI models, allowing you to compare speed, accuracy, and formatting differences in real-time.
 
-This is a basic express server that shows the basic setup for live audio transcriptions using Deepgram.
+**Built upon the Deepgram Live Transcription Starter** and expanded to support multiple STT services for comprehensive comparison analysis.
 
-The code can be found in the following places:
+## 🎯 Features
 
-- Client side code: [/public/client.js](/public/client.js)
-- HTML: [/public/index.html](/index.html)
-- Server side code: [/server.js](/server.js)
+### Real-Time Transcription
+- **Live Audio Processing**: Capture audio from your microphone and get real-time transcriptions
+- **Multi-Model Comparison**: Compare up to 5 different STT services simultaneously:
+  - **Deepgram Nova-3** (Primary baseline)
+  - **AssemblyAI Universal Streaming v3**
+  - **Cartesia Ink-Whisper**
+  - **Speechmatics Real-Time**
+  - **Google Cloud Speech-to-Text**
 
-## Client code
+### File Processing
+- **Batch Audio Processing**: Upload and process audio/video files
+- **Multiple Format Support**: MP3, WAV, MP4, MOV, AVI, and more
+- **Reference Transcript Comparison**: Calculate Word Error Rate (WER) against known transcripts
+- **Built-in Test Scripts**: Pre-loaded test transcripts for standardized evaluation
 
-This code gets access to the users microphone which will be used as the audio input. Once data is available from the microphone, it gets sent to the server via websocket.
+### Performance Analytics (to be unbaised we are using simple metrics and letting the visuals speak for themselves)
+- **Real-Time Statistics**: Word counts, first response times, and recording duration
+- **WER Analysis**: Automatic Word Error Rate calculation for accuracy comparison
+- **Response Time Tracking**: Measure and compare latency across services
 
-When data comes back from the server on the `print-transcript` event, it takes the text and adds it to the body.
+## 🚀 Getting Started
 
-## Server code
+### Prerequisites
+- Node.js (v14 or higher)
+- API keys for the STT services you want to use
 
-The server code creates a new web socket called `globalSocket` that communicates with the client. When data comes in from the client it then sends that data to Deepgram via the SDK. (Note that the Deepgram SDK is just setting up a websocket connection with Deepgram).
+### Installation
 
-## Running the application locally
+1. **Clone the repository**
+   ```bash
+   git clone <your-repository-url>
+   cd js-live-example
+   ```
 
-Create a `.env` file with your own Deepgram API Key.
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-> :warning: Make sure your API key has at least "Member" level permissions, <kbd>Create a New API Key</kbd> -> <kbd>Advanced</kbd> -> <kbd>Change Role</kbd>. For more information, see this link on [Working With Roles & API Scopes](https://developers.deepgram.com/docs/working-with-roles).
+3. **Set up environment variables**
+   Create a `.env` file in the root directory:
+   ```env
+   DEEPGRAM_API_KEY=your_deepgram_api_key
+   ASSEMBLYAI_API_KEY=your_assemblyai_api_key
+   CARTESIA_API_KEY=your_cartesia_api_key
+   SPEECHMATICS_API_KEY=your_speechmatics_api_key
+   GOOGLE_API_KEY=your_google_cloud_api_key
+   ```
 
-Run the following commands to install the dependencies and run the application
+4. **Start the server**
+   ```bash
+   npm start
+   ```
 
+5. **Open your browser**
+   Navigate to `http://localhost:3001`
+
+## 📋 API Keys Setup
+
+### Deepgram
+1. Sign up at [Deepgram Console](https://console.deepgram.com/)
+2. Create a new API key
+3. Add to `.env` as `DEEPGRAM_API_KEY`
+
+### AssemblyAI
+1. Sign up at [AssemblyAI Dashboard](https://www.assemblyai.com/dashboard/)
+2. Copy your API key
+3. Add to `.env` as `ASSEMBLYAI_API_KEY`
+
+### Cartesia
+1. Sign up at [Cartesia Console](https://play.cartesia.ai/)
+2. Generate an API key
+3. Add to `.env` as `CARTESIA_API_KEY`
+
+### Speechmatics
+1. Sign up at [Speechmatics Portal](https://portal.speechmatics.com/)
+2. Create an API key
+3. Add to `.env` as `SPEECHMATICS_API_KEY`
+
+### Google Cloud Speech
+1. Set up a [Google Cloud Project](https://console.cloud.google.com/)
+2. Enable the Speech-to-Text API
+3. Create an API key (not service account)
+4. Add to `.env` as `GOOGLE_API_KEY`
+
+## 🎮 Usage
+
+### Live Recording Mode
+1. **Select Comparison Model**: Choose which STT service to compare against Deepgram
+2. **Click the Microphone**: Start recording and see real-time transcriptions
+3. **Monitor Performance**: Watch word counts, response times, and accuracy in real-time
+4. **Stop Recording**: Click the microphone again to stop and finalize transcripts
+
+### File Processing Mode
+1. **Upload Files**: Drag & drop or browse for audio/video files
+2. **Set Reference Transcript** (Optional): Paste expected transcript for WER calculation
+3. **Process Files**: Click "Process Files" to transcribe with all available models
+4. **Review Results**: Compare transcriptions and WER scores
+
+## 🏗️ Architecture
+
+### Backend (`server.js`)
+- **Express.js** server with WebSocket support
+- **Multi-service integration** with proper error handling
+- **Audio format conversion** using FFmpeg for file processing
+- **Real-time audio streaming** to multiple STT services simultaneously
+
+### Frontend (`client.js`)
+- **Web Audio API** for microphone capture
+- **Real-time WebSocket** communication
+- **Dynamic UI updates** for different comparison models
+- **Performance metrics** tracking and display
+
+### Audio Processing
+- **PCM16 format** at 16kHz sample rate for optimal compatibility
+- **Real-time conversion** from Float32 to Int16 for browser audio
+- **Base64 encoding** for WebSocket transmission
+
+## 📊 Comparison Models
+
+| Service | Model | Features | Best For |
+|---------|-------|----------|----------|
+| **Deepgram** | Nova-3 | Smart formatting, fast response | Baseline comparison |
+| **AssemblyAI** | Universal v3 | Turn-based transcription | Conversation analysis |
+| **Cartesia** | Ink-Whisper | Low latency, streaming | Real-time applications |
+| **Speechmatics** | Enhanced | Speaker diarization | Multi-speaker scenarios |
+| **Google** | Cloud Speech | Punctuation, confidence scores | Enterprise integration |
+
+## 🔧 Technical Details
+
+### Audio Configuration
+- **Sample Rate**: 16kHz
+- **Encoding**: PCM 16-bit signed little-endian
+- **Channels**: Mono (1 channel)
+- **Buffer Size**: 4096 samples
+
+### WebSocket Protocol
+- **Connection**: Single WebSocket handles all STT services
+- **Message Types**: `start`, `audio`, `stop`
+- **Response Types**: `status`, `transcript`, `error`
+
+### Performance Optimizations
+- **Parallel Processing**: All STT services process audio simultaneously
+- **Efficient Buffering**: Optimized audio chunk sizes for each service
+- **Connection Pooling**: Reusable WebSocket connections
+
+## 🛠️ Development
+
+### Project Structure
 ```
-npm i
-npm run dev
+├── server.js              # Main server with multi-STT integration
+├── public/
+│   ├── index.html         # Main UI with mode switching
+│   ├── client.js          # Frontend logic and WebSocket handling
+│   └── style.css          # Responsive styling
+├── package.json           # Dependencies and scripts
+└── .env                   # API keys (create this)
 ```
 
-## Accessing the running application in your browser
+### Adding New STT Services
+1. **Install SDK**: Add the service's JavaScript SDK
+2. **Update server.js**: Add connection logic and message handlers
+3. **Update client.js**: Add UI handling for the new service
+4. **Update HTML**: Add service to dropdown selector
 
-Once the server is running, open the following url in the browser
+## 📈 Performance Metrics
 
+### Measured Metrics
+- **First Response Time**: Time from audio start to first transcript
+- **Word Count**: Real-time word counting per service
+- **Word Error Rate**: Accuracy measurement against reference transcripts
+- **Latency**: End-to-end transcription delay
+
+### WER Calculation
+Uses Levenshtein distance algorithm to calculate:
 ```
-http://localhost:3000/
+WER = (Substitutions + Deletions + Insertions) / Total Reference Words × 100%
 ```
 
-Click on the button when you're ready to transcribe.
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Microphone Access Denied**
+- Ensure HTTPS or localhost for microphone permissions
+- Check browser microphone settings
+
+**WebSocket Connection Failed**
+- Verify server is running on port 3001
+- Check firewall settings
+
+**API Key Errors**
+- Verify all API keys are correctly set in `.env`
+- Check API key permissions and quotas
+
+**Audio Quality Issues**
+- Ensure quiet environment for best results
+- Check microphone quality and positioning
+
+## 📝 License
+
+This project builds upon the Deepgram Live Transcription Starter and is available under the MIT License.
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test with multiple STT services
+5. Submit a pull request
+
+## 🙏 Acknowledgments
+
+- **Deepgram** for the original live transcription starter
+- **AssemblyAI** for Universal Streaming v3 API
+- **Cartesia** for Ink-Whisper real-time STT
+- **Speechmatics** for enhanced real-time transcription
+- **Google Cloud** for Speech-to-Text API
+
+---
+
+**Built for developers, researchers, and anyone interested in comparing speech-to-text accuracy and performance across multiple AI models in real-time.**

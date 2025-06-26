@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Deepgram Test</title>
+    <title>Multi-Model STT Real-time Comparison</title>
     <script src="https://cdn.jsdelivr.net/npm/@deepgram/sdk@v3.0.0"></script>
     <link
       rel="stylesheet"
@@ -12,35 +12,165 @@
   </head>
 
   <body class="">
-    <div class="box">
-      <div class="object" id="record">
-        <div class="outline"></div>
-        <div class="outline" id="delayed"></div>
-        <div class="button"></div>
-        <div class="button" id="circlein">
-          <svg
-            class="mic-icon"
-            version="1.1"
-            xmlns="http://www.w3.org/2000/svg"
-            xmlns:xlink="http://www.w3.org/1999/xlink"
-            x="0px"
-            y="0px"
-            viewBox="0 0 1000 1000"
-            enable-background="new 0 0 1000 1000"
-            xml:space="preserve"
-            style="fill:#000000"
-          >
-            <g>
-              <path
-                d="M500,683.8c84.6,0,153.1-68.6,153.1-153.1V163.1C653.1,78.6,584.6,10,500,10c-84.6,0-153.1,68.6-153.1,153.1v367.5C346.9,615.2,415.4,683.8,500,683.8z M714.4,438.8v91.9C714.4,649,618.4,745,500,745c-118.4,0-214.4-96-214.4-214.4v-91.9h-61.3v91.9c0,141.9,107.2,258.7,245,273.9v124.2H346.9V990h306.3v-61.3H530.6V804.5c137.8-15.2,245-132.1,245-273.9v-91.9H714.4z"
-              />
-            </g>
-          </svg>
+    <div class="header">
+      <h1>Multi-Model STT Comparison</h1>
+      <p>One microphone → Multiple AI models → Live results</p>
+      <p class="accuracy-note">Compare speed, accuracy, and formatting differences in real-time</p>
+    </div>
+    
+    <!-- Mode Selector -->
+    <div class="mode-selector">
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="live-mode-btn" onclick="switchMode('live')">
+          <i class="fas fa-microphone"></i> Live Recording
+        </button>
+        <button class="mode-btn" id="file-mode-btn" onclick="switchMode('file')">
+          <i class="fas fa-upload"></i> File Upload
+        </button>
+      </div>
+    </div>
+
+    <!-- Model Selection for Comparison -->
+    <div class="model-selector">
+      <div class="selector-container">
+        <label for="comparison-model-select">Choose comparison model:</label>
+        <select id="comparison-model-select" onchange="switchComparisonModel()">
+          <option value="assemblyai">AssemblyAI Universal v3</option>
+          <option value="cartesia">Cartesia Ink-Whisper</option>
+          <option value="speechmatics">Speechmatics</option>
+          <option value="google">Google Cloud Speech</option>
+          <option value="google">Amazon Transcribe</option>
+          <option value="google">Microsoft Azure</option>
+          <option value="google">OpenAI Whisper</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Live Recording Interface -->
+    <div class="recording-interface" id="live-interface">
+      <div class="box">
+        <div class="object" id="record">
+          <div class="outline"></div>
+          <div class="outline" id="delayed"></div>
+          <div class="button"></div>
+          <div class="button" id="circlein">
+            <svg
+              class="mic-icon"
+              version="1.1"
+              xmlns="http://www.w3.org/2000/svg"
+              xmlns:xlink="http://www.w3.org/1999/xlink"
+              x="0px"
+              y="0px"
+              viewBox="0 0 1000 1000"
+              enable-background="new 0 0 1000 1000"
+              xml:space="preserve"
+              style="fill:#000000"
+            >
+              <g>
+                <path
+                  d="M500,683.8c84.6,0,153.1-68.6,153.1-153.1V163.1C653.1,78.6,584.6,10,500,10c-84.6,0-153.1-68.6-153.1,153.1v367.5C346.9,615.2,415.4,683.8,500,683.8z M714.4,438.8v91.9C714.4,649,618.4,745,500,745c-118.4,0-214.4-96-214.4-214.4v-91.9h-61.3v91.9c0,141.9,107.2,258.7,245,273.9v124.2H346.9V990h306.3v-61.3H530.6V804.5c137.8-15.2,245-132.1,245-273.9v-91.9H714.4z"
+                />
+              </g>
+            </svg>
+          </div>
         </div>
       </div>
     </div>
-    <div class="captions" id="captions">
-      <span>Captions by Deepgram</span>
+
+    <!-- File Upload Interface -->
+    <div class="file-interface" id="file-interface" style="display: none;">
+      <div class="upload-section">
+        <div class="upload-area" id="upload-area">
+          <div class="upload-content">
+            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+            <p class="upload-text">Drag & Drop audio/video files here or click to browse</p>
+            <p class="upload-formats">Supports: MP3, WAV, MP4, MOV, AVI, etc.</p>
+            <input type="file" id="file-input" accept="audio/*,video/*" multiple style="display: none;">
+          </div>
+        </div>
+        
+        <div class="reference-transcript-section">
+          <h3>Reference Transcript (Optional)</h3>
+          <p class="section-description">Provide the expected transcript for WER calculation</p>
+          <div class="reference-options">
+            <button class="ref-btn" onclick="loadTestScript(1)">Test Script 1</button>
+            <button class="ref-btn" onclick="loadTestScript(2)">Test Script 2</button>
+            <button class="ref-btn" onclick="loadTestScript(3)">Test Script 3</button>
+          </div>
+          <textarea id="reference-transcript" placeholder="Enter or paste the reference transcript here..."></textarea>
+        </div>
+        
+        <div class="uploaded-files" id="uploaded-files"></div>
+        <button class="process-btn" id="process-files-btn" onclick="processFiles()" style="display: none;">
+          <i class="fas fa-play"></i> Process Files
+        </button>
+      </div>
+    </div>
+    
+    <div class="comparison-container">
+      <div class="transcript-panel deepgram-panel">
+        <div class="panel-header">
+          <h2>Deepgram Nova-3</h2>
+          <div class="status-indicator" id="deepgram-status">Disconnected</div>
+        </div>
+        <div class="captions deepgram-captions" id="deepgram-captions">
+          <span class="placeholder">Deepgram transcription will appear here...</span>
+        </div>
+      </div>
+      
+      <div class="transcript-panel comparison-panel assemblyai-panel" id="comparison-panel">
+        <div class="panel-header">
+          <h2 id="comparison-model-title">AssemblyAI v3</h2>
+          <div class="status-indicator" id="comparison-status">Disconnected</div>
+        </div>
+        <div class="captions comparison-captions" id="comparison-captions">
+          <span class="placeholder">Comparison model transcription will appear here...</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-container">
+      <div class="stats-panel">
+        <div class="timer-section">
+          <div class="timer-display">
+            <span class="timer-label">Recording Time</span>
+            <span class="timer-value" id="recording-timer">00:00</span>
+          </div>
+        </div>
+        
+        <div class="word-stats">
+          <div class="word-count deepgram-count">
+            <span class="count-label">Deepgram Words</span>
+            <span class="count-value" id="deepgram-word-count">0</span>
+          </div>
+          
+          <div class="word-count comparison-count assemblyai-count">
+            <span class="count-label" id="comparison-word-label">AssemblyAI Words</span>
+            <span class="count-value" id="comparison-word-count">0</span>
+          </div>
+        </div>
+
+        <!-- WER Statistics -->
+        <div class="wer-stats" id="wer-stats" style="display: none;">
+          <div class="wer-section">
+            <h3>Word Error Rate Analysis</h3>
+            <div class="wer-comparison">
+              <div class="wer-metric deepgram-wer">
+                <span class="wer-label">Deepgram WER</span>
+                <span class="wer-value" id="deepgram-wer">-</span>
+              </div>
+              <div class="wer-metric assembly-wer">
+                <span class="wer-label" id="comparison-wer-label">AssemblyAI WER</span>
+                <span class="wer-value" id="assembly-wer">-</span>
+              </div>
+            </div>
+            <div class="reference-info">
+              <span class="ref-words-label">Reference Words:</span>
+              <span class="ref-words-count" id="reference-word-count">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script src="client.js"></script>

@@ -1,7 +1,7 @@
 {
   "name": "js-live-example",
   "version": "1.0.0",
-  "description": "Deepgram JavaScript live example",
+  "description": "Multi-Model STT Comparison Demo",
   "main": "server.js",
   "private": "true",
   "scripts": {
@@ -12,9 +12,18 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@cartesia/cartesia-js": "^2.2.4",
     "@deepgram/sdk": "^3.0.0",
-    "dotenv": "^16.0.3",
+    "@elevenlabs/elevenlabs-js": "^2.4.0",
+    "@google-cloud/speech": "^7.1.0",
+    "@speechmatics/auth": "^0.0.1",
+    "@speechmatics/real-time-client": "^7.0.2",
+    "dotenv": "^16.5.0",
     "express": "^4.18.2",
-    "nodemon": "^3.0.1"
+    "fluent-ffmpeg": "^2.1.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemon": "^3.0.1",
+    "tsx": "^4.20.3",
+    "ws": "^8.18.2"
   }
 }
