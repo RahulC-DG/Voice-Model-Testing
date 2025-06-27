@@ -1,3 +1,4 @@
+//server.js -- All services are in this file to not add latency with funtion calls
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
@@ -6,6 +7,7 @@ const { CartesiaClient } = require("@cartesia/cartesia-js");
 const { RealtimeClient } = require("@speechmatics/real-time-client");
 const { createSpeechmaticsJWT } = require("@speechmatics/auth");
 const speech = require('@google-cloud/speech');
+const sdk = require('microsoft-cognitiveservices-speech-sdk');
 const dotenv = require("dotenv");
 const multer = require("multer");
 const ffmpeg = require("fluent-ffmpeg");
@@ -27,6 +29,13 @@ const SPEECHMATICS_API_KEY = process.env.SPEECHMATICS_API_KEY;
 
 // Google Cloud Speech API Key
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+
+// OpenAI API Key for Whisper Real-time
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+// Microsoft Azure Speech API Key and Endpoint
+const MICROSOFT_API_KEY = process.env.MICROSOFT_API_KEY;
+const MICROSOFT_SPEECH_ENDPOINT = process.env.MICROSOFT_SPEECH_ENDPOINT;
 
 // Initialize Cartesia client
 const cartesiaClient = new CartesiaClient({
@@ -341,9 +350,9 @@ app.get("/key", async (req, res) => {
   res.json(key);
 });
 
-// WebSocket connection handler for penta transcription (5 services)
+// WebSocket connection handler for septa transcription (7 services)
 wss.on('connection', (ws) => {
-  console.log('Client connected for penta transcription');
+  console.log('Client connected for septa transcription');
   
   let deepgramConnection = null;
   let assemblyConnection = null;
@@ -351,13 +360,16 @@ wss.on('connection', (ws) => {
   let speechmaticsConnection = null;
   let speechmaticsReady = false;
   let googleConnection = null;
+  let openaiConnection = null;
+  let microsoftConnection = null;
+  let microsoftPushStream = null;
   
   ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message);
       
       if (data.type === 'start') {
-        console.log('Starting penta transcription services...');
+        console.log('Starting septa transcription services...');
         
         // Start Deepgram connection (configured for PCM16)
         try {
@@ -654,13 +666,250 @@ wss.on('connection', (ws) => {
             error: error.message
           }));
         }
+        
+        // Start OpenAI Whisper Real-time connection
+        try {
+          if (OPENAI_API_KEY) {
+            const openaiWsUrl = 'wss://api.openai.com/v1/realtime?intent=transcription';
+            
+            openaiConnection = new WebSocket(openaiWsUrl, {
+              headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'OpenAI-Beta': 'realtime=v1'
+              }
+            });
+            
+            openaiConnection.on('open', () => {
+              console.log('Server: OpenAI Whisper connection opened');
+
+              // Configure transcription session using the correct format for transcription endpoint
+              const transcriptionConfig = {
+                type: 'transcription_session.update',
+                session: {
+                  input_audio_format: 'pcm16',
+                  input_audio_transcription: {
+                    model: 'gpt-4o-mini-transcribe'
+                  },
+                  turn_detection: {
+                    type: 'server_vad',
+                    threshold: 0.5,
+                    prefix_padding_ms: 300,
+                    silence_duration_ms: 500
+                  }
+                }
+              };
+              
+              openaiConnection.send(JSON.stringify(transcriptionConfig));
+              console.log('Server: OpenAI transcription session configured');
+
+              ws.send(JSON.stringify({
+                type: 'openai_status',
+                status: 'connected'
+              }));
+            });
+            
+            openaiConnection.on('message', (message) => {
+              try {
+                const data = JSON.parse(message.toString());
+                console.log('Server: OpenAI message type:', data.type);
+                
+                // Handle transcription-specific events for the transcription endpoint
+                if (data.type === 'conversation.item.created') {
+                  // Check if this item contains transcription
+                  if (data.item && data.item.content && data.item.content[0] && 
+                      data.item.content[0].type === 'input_audio' && 
+                      data.item.content[0].transcript) {
+                    const transcript = data.item.content[0].transcript;
+                    if (transcript && transcript.trim() !== '') {
+                      console.log('Server: OpenAI Whisper transcript received:', transcript);
+                      
+                      ws.send(JSON.stringify({
+                        type: 'openai_transcript',
+                        data: {
+                          text: transcript,
+                          is_final: true
+                        }
+                      }));
+                    }
+                  }
+                } else if (data.type === 'conversation.item.input_audio_transcription.completed') {
+                  // Handle completed transcription
+                  const transcript = data.transcript;
+                  if (transcript && transcript.trim() !== '') {
+                    console.log('Server: OpenAI Whisper transcript completed:', transcript);
+                    
+                    ws.send(JSON.stringify({
+                      type: 'openai_transcript',
+                      data: {
+                        text: transcript,
+                        is_final: true
+                      }
+                    }));
+                  }
+                } else if (data.type === 'conversation.item.input_audio_transcription.delta') {
+                  // Handle partial transcription updates
+                  const delta = data.delta;
+                  if (delta && delta.trim() !== '') {
+                    console.log('Server: OpenAI Whisper delta received:', delta);
+                    
+                    ws.send(JSON.stringify({
+                      type: 'openai_transcript',
+                      data: {
+                        text: delta,
+                        is_final: false
+                      }
+                    }));
+                  }
+                } else if (data.type === 'input_audio_buffer.speech_started') {
+                  console.log('Server: OpenAI speech detection started');
+                } else if (data.type === 'input_audio_buffer.speech_stopped') {
+                  console.log('Server: OpenAI speech detection stopped');
+                } else if (data.type === 'input_audio_buffer.committed') {
+                  console.log('Server: OpenAI audio buffer committed');
+                } else if (data.type === 'error') {
+                  console.error('Server: OpenAI error:', data.error);
+                  ws.send(JSON.stringify({
+                    type: 'openai_error',
+                    error: data.error?.message || 'Unknown error'
+                  }));
+                } else {
+                  // Log other event types for debugging
+                  console.log('Server: OpenAI event:', data.type, JSON.stringify(data, null, 2));
+                }
+              } catch (parseError) {
+                console.error('Server: Error parsing OpenAI message:', parseError);
+              }
+            });
+            
+            openaiConnection.on('error', (error) => {
+              console.error('Server: OpenAI WebSocket error:', error);
+              ws.send(JSON.stringify({
+                type: 'openai_error',
+                error: error.message
+              }));
+            });
+            
+            openaiConnection.on('close', (code, reason) => {
+              console.log(`Server: OpenAI connection closed: ${code} ${reason}`);
+            });
+            
+            console.log('Server: OpenAI Whisper Real-time connection initialized');
+            
+          } else {
+            console.warn('Server: OpenAI API key not configured');
+          }
+          
+        } catch (error) {
+          console.error("Server: Failed to create OpenAI Whisper connection:", error);
+          ws.send(JSON.stringify({
+            type: 'openai_error',
+            error: error.message
+          }));
+        }
+        
+        // Start Microsoft Azure Speech-to-Text connection
+        try {
+          if (MICROSOFT_API_KEY && MICROSOFT_SPEECH_ENDPOINT) {
+            // Create speech config using endpoint and API key
+            const speechConfig = sdk.SpeechConfig.fromEndpoint(
+              MICROSOFT_SPEECH_ENDPOINT, 
+              MICROSOFT_API_KEY
+            );
+            speechConfig.speechRecognitionLanguage = 'en-US';
+            
+            // Create push audio input stream for WebSocket audio
+            microsoftPushStream = sdk.AudioInputStream.createPushStream();
+            const audioConfig = sdk.AudioConfig.fromStreamInput(microsoftPushStream);
+            microsoftConnection = new sdk.SpeechRecognizer(speechConfig, audioConfig);
+            
+            // Set up event handlers
+            microsoftConnection.recognizing = (s, e) => {
+              if (e.result.text && e.result.text.trim() !== '') {
+                console.log('Server: Microsoft Speech interim transcript received:', e.result.text);
+                ws.send(JSON.stringify({
+                  type: 'microsoft_transcript',
+                  data: {
+                    text: e.result.text,
+                    is_final: false
+                  }
+                }));
+              }
+            };
+            
+            microsoftConnection.recognized = (s, e) => {
+              if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
+                if (e.result.text && e.result.text.trim() !== '') {
+                  console.log('Server: Microsoft Speech final transcript received:', e.result.text);
+                  ws.send(JSON.stringify({
+                    type: 'microsoft_transcript',
+                    data: {
+                      text: e.result.text,
+                      is_final: true
+                    }
+                  }));
+                }
+              } else if (e.result.reason === sdk.ResultReason.NoMatch) {
+                console.log('Server: Microsoft Speech no match detected');
+              }
+            };
+            
+            microsoftConnection.canceled = (s, e) => {
+              console.error('Server: Microsoft Speech error:', e.reason);
+              if (e.reason === sdk.CancellationReason.Error) {
+                console.error('Server: Microsoft Speech error details:', e.errorDetails);
+                ws.send(JSON.stringify({
+                  type: 'microsoft_error',
+                  error: e.errorDetails || 'Recognition canceled'
+                }));
+              }
+            };
+            
+            microsoftConnection.sessionStarted = (s, e) => {
+              console.log('Server: Microsoft Speech session started:', e.sessionId);
+              ws.send(JSON.stringify({
+                type: 'microsoft_status',
+                status: 'connected'
+              }));
+            };
+            
+            microsoftConnection.sessionStopped = (s, e) => {
+              console.log('Server: Microsoft Speech session stopped:', e.sessionId);
+            };
+            
+            // Start continuous recognition
+            microsoftConnection.startContinuousRecognitionAsync(
+              () => {
+                console.log('Server: Microsoft Speech continuous recognition started');
+              },
+              (error) => {
+                console.error('Server: Microsoft Speech failed to start recognition:', error);
+                ws.send(JSON.stringify({
+                  type: 'microsoft_error',
+                  error: error.message || 'Failed to start recognition'
+                }));
+              }
+            );
+            
+            console.log('Server: Microsoft Azure Speech-to-Text connection initialized');
+            
+          } else {
+            console.warn('Server: Microsoft API key or endpoint not configured');
+          }
+          
+        } catch (error) {
+          console.error("Server: Failed to create Microsoft Speech connection:", error);
+          ws.send(JSON.stringify({
+            type: 'microsoft_error',
+            error: error.message
+          }));
+        }
       }
       
       if (data.type === 'audio' && data.audio) {
         const audioBuffer = Buffer.from(data.audio, 'base64');
         console.log("Server: PCM16 audio buffer size:", audioBuffer.length, "bytes");
         
-        // Forward PCM16 audio to all five services
+        // Forward PCM16 audio to all six services
         if (deepgramConnection && deepgramConnection.getReadyState() === 1) {
           deepgramConnection.send(audioBuffer);
           console.log("Server: PCM16 audio sent to Deepgram");
@@ -703,10 +952,36 @@ wss.on('connection', (ws) => {
             console.error("Server: Error sending audio to Google Speech:", error);
           }
         }
+        
+        if (openaiConnection && openaiConnection.readyState === WebSocket.OPEN) {
+          try {
+            // OpenAI transcription endpoint expects 24kHz PCM16
+            const base64Audio = audioBuffer.toString('base64');
+            const audioMessage = {
+              type: 'input_audio_buffer.append',
+              audio: base64Audio
+            };
+            
+            openaiConnection.send(JSON.stringify(audioMessage));
+            console.log("Server: PCM16 audio sent to OpenAI Whisper");
+          } catch (error) {
+            console.error("Server: Error sending audio to OpenAI Whisper:", error);
+          }
+        }
+        
+        if (microsoftConnection) {
+          try {
+            // Send audio to Microsoft Speech-to-Text
+            microsoftPushStream.write(audioBuffer);
+            console.log("Server: PCM16 audio sent to Microsoft Speech-to-Text");
+          } catch (error) {
+            console.error("Server: Error sending audio to Microsoft Speech-to-Text:", error);
+          }
+        }
       }
       
       if (data.type === 'stop') {
-        console.log('Stopping penta transcription services...');
+        console.log('Stopping septa transcription services...');
         
         if (deepgramConnection) {
           deepgramConnection.finish();
@@ -755,6 +1030,28 @@ wss.on('connection', (ws) => {
             console.log("Server: Google Speech connection closed");
           } catch (error) {
             console.error("Server: Error closing Google Speech connection:", error);
+          }
+        }
+        
+        if (openaiConnection) {
+          try {
+            // For transcription endpoint, just close the connection
+            // No need to send special cleanup messages
+            openaiConnection.close();
+            openaiConnection = null;
+            console.log("Server: OpenAI Whisper connection closed");
+          } catch (error) {
+            console.error("Server: Error closing OpenAI Whisper connection:", error);
+          }
+        }
+        
+        if (microsoftConnection) {
+          try {
+            // Clean up Microsoft Speech-to-Text connection
+            microsoftConnection.stopContinuousRecognitionAsync();
+            console.log("Server: Microsoft Speech-to-Text connection cleaned up");
+          } catch (error) {
+            console.error("Server: Error cleaning up Microsoft Speech-to-Text connection:", error);
           }
         }
       }
@@ -808,15 +1105,38 @@ wss.on('connection', (ws) => {
         console.error("Server: Error cleaning up Google Speech connection:", error);
       }
     }
+    
+    if (openaiConnection) {
+      try {
+        if (openaiConnection.readyState === WebSocket.OPEN) {
+          openaiConnection.close();
+        }
+        console.log("Server: OpenAI Whisper connection cleaned up");
+      } catch (error) {
+        console.error("Server: Error cleaning up OpenAI Whisper connection:", error);
+      }
+    }
+    
+    if (microsoftConnection) {
+      try {
+        // Clean up Microsoft Speech-to-Text connection
+        microsoftConnection.stopContinuousRecognitionAsync();
+        console.log("Server: Microsoft Speech-to-Text connection cleaned up");
+      } catch (error) {
+        console.error("Server: Error cleaning up Microsoft Speech-to-Text connection:", error);
+      }
+    }
   });
 });
 
 server.listen(3001, () => {
   console.log("Server listening on http://localhost:3001");
-  console.log("WebSocket server ready for penta transcription with latest APIs:");
+  console.log("WebSocket server ready for septa transcription with latest APIs:");
   console.log("- Deepgram Nova-3 (PCM16)");
   console.log("- AssemblyAI Universal Streaming v3 (PCM16)");
   console.log("- Cartesia Ink-Whisper");
   console.log("- Speechmatics");
   console.log("- Google Cloud Speech-to-Text");
+  console.log("- OpenAI Whisper Real-time");
+  console.log("- Microsoft Azure Speech-to-Text");
 });

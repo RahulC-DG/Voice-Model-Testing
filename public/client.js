@@ -124,6 +124,18 @@ function switchComparisonModel() {
       panelClass: 'google-panel',
       wordLabel: 'Google Words',
       werLabel: 'Google WER'
+    },
+    openai: {
+      title: 'OpenAI Whisper',
+      panelClass: 'openai-panel',
+      wordLabel: 'OpenAI Words',
+      werLabel: 'OpenAI WER'
+    },
+    microsoft: {
+      title: 'Microsoft Azure Speech',
+      panelClass: 'microsoft-panel',
+      wordLabel: 'Microsoft Words',
+      werLabel: 'Microsoft WER'
     }
   };
   
@@ -471,7 +483,7 @@ function handleServerMessage(data) {
         console.log("Client: Deepgram connected");
       }
       break;
-      
+      //statuses
     case 'assembly_status':
       if (data.status === 'connected' && currentComparisonModel === 'assemblyai') {
         comparisonStatus.textContent = 'Connected';
@@ -504,6 +516,23 @@ function handleServerMessage(data) {
       }
       break;
       
+    case 'openai_status':
+      if (data.status === 'connected' && currentComparisonModel === 'openai') {
+        comparisonStatus.textContent = 'Connected';
+        comparisonStatus.classList.add('connected');
+        console.log("Client: OpenAI Whisper connected");
+      }
+      break;
+      
+    case 'microsoft_status':
+      if (data.status === 'connected' && currentComparisonModel === 'microsoft') {
+        comparisonStatus.textContent = 'Connected';
+        comparisonStatus.classList.add('connected');
+        console.log("Client: Microsoft Speech connected");
+      }
+      break;
+      
+      //transcripts
     case 'deepgram_transcript':
       updateDeepgramTranscriptAppend(data.data);
       break;
@@ -532,6 +561,19 @@ function handleServerMessage(data) {
       }
       break;
       
+    case 'openai_transcript':
+      if (currentComparisonModel === 'openai') {
+        updateOpenAITranscriptAppend(data.data);
+      }
+      break;
+      
+    case 'microsoft_transcript':
+      if (currentComparisonModel === 'microsoft') {
+        updateMicrosoftTranscriptAppend(data.data);
+      }
+      break;
+      
+      //error handling
     case 'deepgram_error':
       console.error("Client: Deepgram error:", data.error);
       deepgramStatus.textContent = 'Error';
@@ -565,6 +607,22 @@ function handleServerMessage(data) {
     case 'google_error':
       if (currentComparisonModel === 'google') {
         console.error("Client: Google Speech error:", data.error);
+        comparisonStatus.textContent = 'Error';
+        comparisonStatus.classList.remove('connected');
+      }
+      break;
+      
+    case 'openai_error':
+      if (currentComparisonModel === 'openai') {
+        console.error("Client: OpenAI Whisper error:", data.error);
+        comparisonStatus.textContent = 'Error';
+        comparisonStatus.classList.remove('connected');
+      }
+      break;
+      
+    case 'microsoft_error':
+      if (currentComparisonModel === 'microsoft') {
+        console.error("Client: Microsoft Speech error:", data.error);
         comparisonStatus.textContent = 'Error';
         comparisonStatus.classList.remove('connected');
       }
@@ -646,6 +704,70 @@ function updateGoogleTranscriptAppend(data) {
     if (!comparisonFirstResponse && recordingStartTime) {
       comparisonFirstResponse = Date.now() - recordingStartTime;
       console.log("Google Speech first response time:", comparisonFirstResponse + "ms");
+    }
+    
+    if (isFinal) {
+      // Add final transcript to the list
+      comparisonTranscripts.push(data.text);
+      
+      // Update total word count
+      const newWords = countWords(data.text);
+      comparisonTotalWords += newWords;
+      
+      // Clear interim transcript
+      comparisonInterimTranscript = "";
+    } else {
+      // Update interim transcript
+      comparisonInterimTranscript = data.text;
+    }
+    
+    updateComparisonDisplayAppend();
+    updateStats();
+  }
+}
+
+// APPEND MODE - Update OpenAI Whisper transcript display
+function updateOpenAITranscriptAppend(data) {
+  if (data.text && data.text.trim() !== "") {
+    const isFinal = data.is_final || false;
+    console.log("Client: OpenAI Whisper transcript:", data.text, isFinal ? "(final)" : "(interim)");
+    
+    // Track first response time only
+    if (!comparisonFirstResponse && recordingStartTime) {
+      comparisonFirstResponse = Date.now() - recordingStartTime;
+      console.log("OpenAI Whisper first response time:", comparisonFirstResponse + "ms");
+    }
+    
+    if (isFinal) {
+      // Add final transcript to the list
+      comparisonTranscripts.push(data.text);
+      
+      // Update total word count
+      const newWords = countWords(data.text);
+      comparisonTotalWords += newWords;
+      
+      // Clear interim transcript
+      comparisonInterimTranscript = "";
+    } else {
+      // Update interim transcript
+      comparisonInterimTranscript = data.text;
+    }
+    
+    updateComparisonDisplayAppend();
+    updateStats();
+  }
+}
+
+// APPEND MODE - Update Microsoft Azure Speech transcript display
+function updateMicrosoftTranscriptAppend(data) {
+  if (data.text && data.text.trim() !== "") {
+    const isFinal = data.is_final || false;
+    console.log("Client: Microsoft Speech transcript:", data.text, isFinal ? "(final)" : "(interim)");
+    
+    // Track first response time only
+    if (!comparisonFirstResponse && recordingStartTime) {
+      comparisonFirstResponse = Date.now() - recordingStartTime;
+      console.log("Microsoft Speech first response time:", comparisonFirstResponse + "ms");
     }
     
     if (isFinal) {
@@ -1018,10 +1140,10 @@ function float32ToInt16(float32Array) {
 // Get microphone access and set up Web Audio API
 async function setupAudioCapture() {
   try {
-    // Get microphone stream
+    // Get microphone stream - OpenAI requires 24kHz
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        sampleRate: 16000,
+        sampleRate: 24000,  // Changed from 16000 to 24000 for OpenAI
         channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true,
@@ -1029,9 +1151,9 @@ async function setupAudioCapture() {
       }
     });
     
-    // Create audio context
+    // Create audio context - OpenAI requires 24kHz
     audioContext = new (window.AudioContext || window.webkitAudioContext)({
-      sampleRate: 16000
+      sampleRate: 24000  // Changed from 16000 to 24000 for OpenAI
     });
     
     // Create audio source from stream
