@@ -12,6 +12,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@aws-sdk/client-transcribe-streaming": "^3.846.0",
     "@cartesia/cartesia-js": "^2.2.4",
     "@deepgram/sdk": "^3.0.0",
     "@elevenlabs/elevenlabs-js": "^2.4.0",

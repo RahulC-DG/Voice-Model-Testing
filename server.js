@@ -8,6 +8,7 @@ const { RealtimeClient } = require("@speechmatics/real-time-client");
 const { createSpeechmaticsJWT } = require("@speechmatics/auth");
 const speech = require('@google-cloud/speech');
 const sdk = require('microsoft-cognitiveservices-speech-sdk');
+const { TranscribeStreamingClient, StartStreamTranscriptionCommand } = require('@aws-sdk/client-transcribe-streaming');
 const dotenv = require("dotenv");
 const multer = require("multer");
 const ffmpeg = require("fluent-ffmpeg");
@@ -37,6 +38,12 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MICROSOFT_API_KEY = process.env.MICROSOFT_API_KEY;
 const MICROSOFT_SPEECH_ENDPOINT = process.env.MICROSOFT_SPEECH_ENDPOINT;
 
+// AWS Transcribe credentials
+const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
+const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+const AWS_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN;
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+
 // Initialize Cartesia client
 const cartesiaClient = new CartesiaClient({
   apiKey: CARTESIA_API_KEY,
@@ -46,6 +53,30 @@ const cartesiaClient = new CartesiaClient({
 const googleSpeechClient = new speech.SpeechClient({
   apiKey: GOOGLE_API_KEY,
 });
+
+// Initialize AWS Transcribe client
+const awsTranscribeClient = new TranscribeStreamingClient({
+  region: AWS_REGION,
+  credentials: {
+    accessKeyId: AWS_ACCESS_KEY_ID,
+    secretAccessKey: AWS_SECRET_ACCESS_KEY,
+    sessionToken: AWS_SESSION_TOKEN,
+  },
+});
+
+// Helper function to extract region from Microsoft endpoint
+function extractRegionFromEndpoint(endpoint) {
+  if (!endpoint) return 'eastus';
+  
+  // Extract region from endpoint URL like https://eastus.api.cognitive.microsoft.com/
+  const match = endpoint.match(/https:\/\/([^.]+)\.api\.cognitive\.microsoft\.com/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  
+  // Fallback to eastus if can't extract
+  return 'eastus';
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -350,9 +381,9 @@ app.get("/key", async (req, res) => {
   res.json(key);
 });
 
-// WebSocket connection handler for septa transcription (7 services)
+// WebSocket connection handler for octa transcription (8 services)
 wss.on('connection', (ws) => {
-  console.log('Client connected for septa transcription');
+  console.log('Client connected for octa transcription');
   
   let deepgramConnection = null;
   let assemblyConnection = null;
@@ -363,13 +394,14 @@ wss.on('connection', (ws) => {
   let openaiConnection = null;
   let microsoftConnection = null;
   let microsoftPushStream = null;
+  let awsTranscribeStream = null;
   
   ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message);
       
       if (data.type === 'start') {
-        console.log('Starting septa transcription services...');
+        console.log('Starting octa transcription services...');
         
         // Start Deepgram connection (configured for PCM16)
         try {
@@ -810,15 +842,35 @@ wss.on('connection', (ws) => {
         // Start Microsoft Azure Speech-to-Text connection
         try {
           if (MICROSOFT_API_KEY && MICROSOFT_SPEECH_ENDPOINT) {
-            // Create speech config using endpoint and API key
-            const speechConfig = sdk.SpeechConfig.fromEndpoint(
-              MICROSOFT_SPEECH_ENDPOINT, 
-              MICROSOFT_API_KEY
-            );
+            // Try subscription method first (more reliable)
+            let speechConfig;
+            const extractedRegion = extractRegionFromEndpoint(MICROSOFT_SPEECH_ENDPOINT);
+            
+            try {
+              speechConfig = sdk.SpeechConfig.fromSubscription(
+                MICROSOFT_API_KEY, 
+                extractedRegion
+              );
+              console.log(`Server: Microsoft Speech using region: ${extractedRegion}`);
+            } catch (regionError) {
+              console.log('Server: Falling back to endpoint method for Microsoft Speech');
+              // Fallback to endpoint method
+              speechConfig = sdk.SpeechConfig.fromEndpoint(
+                new URL(MICROSOFT_SPEECH_ENDPOINT), 
+                MICROSOFT_API_KEY
+              );
+            }
+            
             speechConfig.speechRecognitionLanguage = 'en-US';
             
+            // Set audio format explicitly
+            speechConfig.setProperty(sdk.PropertyId.Speech_LogFilename, "");
+            speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EnableAudioLogging, "false");
+            
             // Create push audio input stream for WebSocket audio
-            microsoftPushStream = sdk.AudioInputStream.createPushStream();
+            microsoftPushStream = sdk.AudioInputStream.createPushStream(
+              sdk.AudioStreamFormat.getWaveFormatPCM(16000, 16, 1)
+            );
             const audioConfig = sdk.AudioConfig.fromStreamInput(microsoftPushStream);
             microsoftConnection = new sdk.SpeechRecognizer(speechConfig, audioConfig);
             
@@ -854,12 +906,25 @@ wss.on('connection', (ws) => {
             };
             
             microsoftConnection.canceled = (s, e) => {
-              console.error('Server: Microsoft Speech error:', e.reason);
+              console.error('Server: Microsoft Speech canceled:', e.reason);
+              console.error('Server: Microsoft Speech error code:', e.errorCode);
+              console.error('Server: Microsoft Speech error details:', e.errorDetails);
+              
               if (e.reason === sdk.CancellationReason.Error) {
-                console.error('Server: Microsoft Speech error details:', e.errorDetails);
+                let errorMessage = e.errorDetails || 'Recognition canceled';
+                
+                // Provide more specific error messages
+                if (e.errorCode === sdk.CancellationErrorCode.ConnectionFailure) {
+                  errorMessage = 'Connection failed. Please check your API key and endpoint.';
+                } else if (e.errorCode === sdk.CancellationErrorCode.AuthenticationFailure) {
+                  errorMessage = 'Authentication failed. Please check your API key.';
+                } else if (e.errorCode === sdk.CancellationErrorCode.TooManyRequests) {
+                  errorMessage = 'Too many requests. Please try again later.';
+                }
+                
                 ws.send(JSON.stringify({
                   type: 'microsoft_error',
-                  error: e.errorDetails || 'Recognition canceled'
+                  error: errorMessage
                 }));
               }
             };
@@ -876,19 +941,32 @@ wss.on('connection', (ws) => {
               console.log('Server: Microsoft Speech session stopped:', e.sessionId);
             };
             
-            // Start continuous recognition
-            microsoftConnection.startContinuousRecognitionAsync(
-              () => {
-                console.log('Server: Microsoft Speech continuous recognition started');
-              },
-              (error) => {
-                console.error('Server: Microsoft Speech failed to start recognition:', error);
-                ws.send(JSON.stringify({
-                  type: 'microsoft_error',
-                  error: error.message || 'Failed to start recognition'
-                }));
-              }
-            );
+            // Start continuous recognition with timeout
+            const startRecognitionPromise = new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                reject(new Error('Microsoft Speech connection timeout after 10 seconds'));
+              }, 10000);
+              
+              microsoftConnection.startContinuousRecognitionAsync(
+                () => {
+                  clearTimeout(timeout);
+                  console.log('Server: Microsoft Speech continuous recognition started');
+                  resolve();
+                },
+                (error) => {
+                  clearTimeout(timeout);
+                  console.error('Server: Microsoft Speech failed to start recognition:', error);
+                  reject(error);
+                }
+              );
+            });
+            
+            startRecognitionPromise.catch((error) => {
+              ws.send(JSON.stringify({
+                type: 'microsoft_error',
+                error: error.message || 'Failed to start recognition'
+              }));
+            });
             
             console.log('Server: Microsoft Azure Speech-to-Text connection initialized');
             
@@ -903,13 +981,128 @@ wss.on('connection', (ws) => {
             error: error.message
           }));
         }
+        
+        // Start Amazon Transcribe Streaming connection
+        try {
+          if (AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY) {
+            // Create audio stream for AWS Transcribe
+            const audioStream = async function* () {
+              while (true) {
+                const chunk = await new Promise((resolve) => {
+                  audioStream._resolve = resolve;
+                });
+                if (chunk === null) break;
+                yield { AudioEvent: { AudioChunk: chunk } };
+              }
+            };
+            
+            const command = new StartStreamTranscriptionCommand({
+              LanguageCode: 'en-US',
+              MediaEncoding: 'pcm',
+              MediaSampleRateHertz: 16000,
+              AudioStream: audioStream(),
+            });
+            
+            const response = await awsTranscribeClient.send(command);
+            awsTranscribeStream = response.TranscriptResultStream;
+            
+            // Store the audio stream resolver for later use
+            audioStream._resolve = null;
+            audioStream._sendAudio = (chunk) => {
+              if (audioStream._resolve) {
+                audioStream._resolve(chunk);
+                audioStream._resolve = null;
+              }
+            };
+            audioStream._end = () => {
+              if (audioStream._resolve) {
+                audioStream._resolve(null);
+                audioStream._resolve = null;
+              }
+            };
+            
+            // Store reference to audio stream for sending audio
+            awsTranscribeStream._audioStream = audioStream;
+            
+            // Process transcription results
+            (async () => {
+              try {
+                for await (const event of awsTranscribeStream) {
+                  if (event.TranscriptEvent) {
+                    const results = event.TranscriptEvent.Transcript.Results;
+                    if (results && results.length > 0) {
+                      for (const result of results) {
+                        if (result.Alternatives && result.Alternatives.length > 0) {
+                          const transcript = result.Alternatives[0].Transcript;
+                          const isPartial = result.IsPartial;
+                          
+                          if (transcript && transcript.trim() !== '') {
+                            console.log(`Server: AWS Transcribe transcript received [${isPartial ? 'PARTIAL' : 'FINAL'}]:`, transcript);
+                            
+                            ws.send(JSON.stringify({
+                              type: 'aws_transcript',
+                              data: {
+                                text: transcript,
+                                is_final: !isPartial
+                              }
+                            }));
+                          }
+                        }
+                      }
+                    }
+                  } else if (event.BadRequestException) {
+                    console.error('Server: AWS Transcribe BadRequestException:', event.BadRequestException);
+                    ws.send(JSON.stringify({
+                      type: 'aws_error',
+                      error: event.BadRequestException.Message || 'Bad request'
+                    }));
+                  } else if (event.InternalFailureException) {
+                    console.error('Server: AWS Transcribe InternalFailureException:', event.InternalFailureException);
+                    ws.send(JSON.stringify({
+                      type: 'aws_error',
+                      error: event.InternalFailureException.Message || 'Internal failure'
+                    }));
+                  } else if (event.LimitExceededException) {
+                    console.error('Server: AWS Transcribe LimitExceededException:', event.LimitExceededException);
+                    ws.send(JSON.stringify({
+                      type: 'aws_error',
+                      error: event.LimitExceededException.Message || 'Limit exceeded'
+                    }));
+                  }
+                }
+              } catch (streamError) {
+                console.error('Server: AWS Transcribe stream error:', streamError);
+                ws.send(JSON.stringify({
+                  type: 'aws_error',
+                  error: streamError.message || 'Stream error'
+                }));
+              }
+            })();
+            
+            console.log('Server: Amazon Transcribe Streaming connection initialized');
+            ws.send(JSON.stringify({
+              type: 'aws_status',
+              status: 'connected'
+            }));
+            
+          } else {
+            console.warn('Server: AWS credentials not configured');
+          }
+          
+        } catch (error) {
+          console.error("Server: Failed to create AWS Transcribe connection:", error);
+          ws.send(JSON.stringify({
+            type: 'aws_error',
+            error: error.message
+          }));
+        }
       }
       
       if (data.type === 'audio' && data.audio) {
         const audioBuffer = Buffer.from(data.audio, 'base64');
         console.log("Server: PCM16 audio buffer size:", audioBuffer.length, "bytes");
         
-        // Forward PCM16 audio to all six services
+        // Forward PCM16 audio to all eight services
         if (deepgramConnection && deepgramConnection.getReadyState() === 1) {
           deepgramConnection.send(audioBuffer);
           console.log("Server: PCM16 audio sent to Deepgram");
@@ -978,10 +1171,20 @@ wss.on('connection', (ws) => {
             console.error("Server: Error sending audio to Microsoft Speech-to-Text:", error);
           }
         }
+        
+        if (awsTranscribeStream && awsTranscribeStream._audioStream) {
+          try {
+            // Send audio to AWS Transcribe
+            awsTranscribeStream._audioStream._sendAudio(audioBuffer);
+            console.log("Server: PCM16 audio sent to AWS Transcribe");
+          } catch (error) {
+            console.error("Server: Error sending audio to AWS Transcribe:", error);
+          }
+        }
       }
       
       if (data.type === 'stop') {
-        console.log('Stopping septa transcription services...');
+        console.log('Stopping octa transcription services...');
         
         if (deepgramConnection) {
           deepgramConnection.finish();
@@ -1052,6 +1255,19 @@ wss.on('connection', (ws) => {
             console.log("Server: Microsoft Speech-to-Text connection cleaned up");
           } catch (error) {
             console.error("Server: Error cleaning up Microsoft Speech-to-Text connection:", error);
+          }
+        }
+        
+        if (awsTranscribeStream) {
+          try {
+            // End AWS Transcribe stream
+            if (awsTranscribeStream._audioStream) {
+              awsTranscribeStream._audioStream._end();
+            }
+            awsTranscribeStream = null;
+            console.log("Server: AWS Transcribe connection cleaned up");
+          } catch (error) {
+            console.error("Server: Error cleaning up AWS Transcribe connection:", error);
           }
         }
       }
@@ -1126,12 +1342,25 @@ wss.on('connection', (ws) => {
         console.error("Server: Error cleaning up Microsoft Speech-to-Text connection:", error);
       }
     }
+    
+    if (awsTranscribeStream) {
+      try {
+        // End AWS Transcribe stream
+        if (awsTranscribeStream._audioStream) {
+          awsTranscribeStream._audioStream._end();
+        }
+        awsTranscribeStream = null;
+        console.log("Server: AWS Transcribe connection cleaned up");
+      } catch (error) {
+        console.error("Server: Error cleaning up AWS Transcribe connection:", error);
+      }
+    }
   });
 });
 
 server.listen(3001, () => {
   console.log("Server listening on http://localhost:3001");
-  console.log("WebSocket server ready for septa transcription with latest APIs:");
+  console.log("WebSocket server ready for octa transcription with latest APIs:");
   console.log("- Deepgram Nova-3 (PCM16)");
   console.log("- AssemblyAI Universal Streaming v3 (PCM16)");
   console.log("- Cartesia Ink-Whisper");
@@ -1139,4 +1368,5 @@ server.listen(3001, () => {
   console.log("- Google Cloud Speech-to-Text");
   console.log("- OpenAI Whisper Real-time");
   console.log("- Microsoft Azure Speech-to-Text");
+  console.log("- Amazon Transcribe Streaming");
 });

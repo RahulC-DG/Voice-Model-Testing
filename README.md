@@ -8,12 +8,15 @@ A real-time speech-to-text comparison application that simultaneously transcribe
 
 ### Real-Time Transcription
 - **Live Audio Processing**: Capture audio from your microphone and get real-time transcriptions
-- **Multi-Model Comparison**: Compare up to 5 different STT services simultaneously:
+- **Multi-Model Comparison**: Compare up to 8 different STT services simultaneously:
   - **Deepgram Nova-3** (Primary baseline)
   - **AssemblyAI Universal Streaming v3**
   - **Cartesia Ink-Whisper**
   - **Speechmatics Real-Time**
   - **Google Cloud Speech-to-Text**
+  - **OpenAI Whisper Real-time**
+  - **Microsoft Azure Speech-to-Text**
+  - **Amazon Transcribe Streaming**
 
 ### File Processing
 - **Batch Audio Processing**: Upload and process audio/video files
@@ -53,6 +56,13 @@ A real-time speech-to-text comparison application that simultaneously transcribe
    CARTESIA_API_KEY=your_cartesia_api_key
    SPEECHMATICS_API_KEY=your_speechmatics_api_key
    GOOGLE_API_KEY=your_google_cloud_api_key
+   OPENAI_API_KEY=your_openai_api_key
+   MICROSOFT_API_KEY=your_microsoft_api_key
+   MICROSOFT_SPEECH_ENDPOINT=https://your-region.api.cognitive.microsoft.com/
+   AWS_ACCESS_KEY_ID=your_aws_access_key
+   AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+   AWS_SESSION_TOKEN=your_aws_session_token
+   AWS_REGION=us-east-1
    ```
 
 4. **Start the server**
@@ -90,6 +100,21 @@ A real-time speech-to-text comparison application that simultaneously transcribe
 2. Enable the Speech-to-Text API
 3. Create an API key (not service account)
 4. Add to `.env` as `GOOGLE_API_KEY`
+
+### OpenAI Whisper
+1. Sign up at [OpenAI Platform](https://platform.openai.com/)
+2. Create an API key
+3. Add to `.env` as `OPENAI_API_KEY`
+
+### Microsoft Azure Speech
+1. Create an [Azure Cognitive Services](https://azure.microsoft.com/en-us/services/cognitive-services/) resource
+2. Get your API key and endpoint from the Azure portal
+3. Add to `.env` as `MICROSOFT_API_KEY` and `MICROSOFT_SPEECH_ENDPOINT`
+
+### Amazon Transcribe
+1. Set up [AWS IAM credentials](https://console.aws.amazon.com/iam/)
+2. Ensure permissions for Amazon Transcribe service
+3. Add credentials to `.env` as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN`
 
 ## 🎮 Usage
 
@@ -133,11 +158,14 @@ A real-time speech-to-text comparison application that simultaneously transcribe
 | **Cartesia** | Ink-Whisper | Low latency, streaming | Real-time applications |
 | **Speechmatics** | Enhanced | Speaker diarization | Multi-speaker scenarios |
 | **Google** | Cloud Speech | Punctuation, confidence scores | Enterprise integration |
+| **OpenAI** | Whisper Real-time | Advanced language understanding | Complex audio processing |
+| **Microsoft** | Azure Speech | Enterprise features, customization | Business applications |
+| **Amazon** | Transcribe Streaming | AWS ecosystem integration | Cloud-native solutions |
 
 ## 🔧 Technical Details
 
 ### Audio Configuration
-- **Sample Rate**: 16kHz
+- **Sample Rate**: 24kHz (optimized for OpenAI Whisper, downsampled for other services)
 - **Encoding**: PCM 16-bit signed little-endian
 - **Channels**: Mono (1 channel)
 - **Buffer Size**: 4096 samples
@@ -224,7 +252,10 @@ This project builds upon the Deepgram Live Transcription Starter and is availabl
 - **Cartesia** for Ink-Whisper real-time STT
 - **Speechmatics** for enhanced real-time transcription
 - **Google Cloud** for Speech-to-Text API
+- **OpenAI** for Whisper real-time transcription
+- **Microsoft** for Azure Speech-to-Text services
+- **Amazon** for Transcribe Streaming API
 
 ---
 
-**Built for developers, researchers, and anyone interested in comparing speech-to-text accuracy and performance across multiple AI models in real-time.**
+**Built for developers, researchers, and anyone interested in comparing speech-to-text accuracy and performance across 8 major AI models in real-time.**

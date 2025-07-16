@@ -190,6 +190,10 @@ body {
   border-left: 4px solid #0078d4;
 }
 
+.comparison-panel.aws-panel {
+  border-left: 4px solid #ff9900;
+}
+
 .panel-header {
   display: flex;
   justify-content: space-between;
@@ -235,6 +239,10 @@ body {
 
 .comparison-panel.microsoft-panel h2 {
   color: #0078d4;
+}
+
+.comparison-panel.aws-panel h2 {
+  color: #ff9900;
 }
 
 .status-indicator {
@@ -1071,6 +1079,10 @@ body {
   border-left: 4px solid #0078d4;
 }
 
+.comparison-panel.aws-panel {
+  border-left: 4px solid #ff9900;
+}
+
 .comparison-panel.assemblyai-panel h2 {
   color: #4ecdc4;
 }
@@ -1093,6 +1105,10 @@ body {
 
 .comparison-panel.microsoft-panel h2 {
   color: #0078d4;
+}
+
+.comparison-panel.aws-panel h2 {
+  color: #ff9900;
 }
 
 .comparison-captions {
@@ -1124,6 +1140,10 @@ body {
   color: #0078d4;
 }
 
+.aws-panel .comparison-captions {
+  color: #ff9900;
+}
+
 .assemblyai-panel .comparison-captions span {
   color: #4ecdc4;
 }
@@ -1146,6 +1166,10 @@ body {
 
 .microsoft-panel .comparison-captions span {
   color: #0078d4;
+}
+
+.aws-panel .comparison-captions span {
+  color: #ff9900;
 }
 
 .assemblyai-panel .comparison-captions .final-transcript {
@@ -1194,6 +1218,14 @@ body {
 
 .microsoft-panel .comparison-captions .interim-transcript {
   color: rgba(0, 120, 212, 0.7);
+}
+
+.aws-panel .comparison-captions .final-transcript {
+  color: #ff9900;
+}
+
+.aws-panel .comparison-captions .interim-transcript {
+  color: rgba(255, 153, 0, 0.7);
 }
 
 /* Word count styling */
@@ -1317,5 +1349,15 @@ body {
 
 .microsoft-panel #comparison-status.connected {
   background: #0078d4;
+  color: white;
+}
+
+.aws-panel #comparison-status {
+  background: rgba(255, 153, 0, 0.2);
+  color: #ff9900;
+}
+
+.aws-panel #comparison-status.connected {
+  background: #ff9900;
   color: white;
 }
