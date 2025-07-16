@@ -985,14 +985,26 @@ wss.on('connection', (ws) => {
         // Start Amazon Transcribe Streaming connection
         try {
           if (AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY) {
-            // Create audio stream for AWS Transcribe
+            // Create a more robust audio stream implementation
+            let audioStreamController;
+            let audioStreamEnded = false;
+            
             const audioStream = async function* () {
-              while (true) {
-                const chunk = await new Promise((resolve) => {
-                  audioStream._resolve = resolve;
-                });
-                if (chunk === null) break;
-                yield { AudioEvent: { AudioChunk: chunk } };
+              try {
+                while (!audioStreamEnded) {
+                  const chunk = await new Promise((resolve, reject) => {
+                    audioStreamController = { resolve, reject };
+                  });
+                  
+                  if (chunk === null || audioStreamEnded) {
+                    break;
+                  }
+                  
+                  console.log(`Server: AWS Transcribe sending audio chunk: ${chunk.length} bytes`);
+                  yield { AudioEvent: { AudioChunk: chunk } };
+                }
+              } catch (error) {
+                console.error('Server: AWS Transcribe audio stream error:', error);
               }
             };
             
@@ -1003,38 +1015,44 @@ wss.on('connection', (ws) => {
               AudioStream: audioStream(),
             });
             
+            console.log('Server: Starting AWS Transcribe stream...');
             const response = await awsTranscribeClient.send(command);
             awsTranscribeStream = response.TranscriptResultStream;
             
-            // Store the audio stream resolver for later use
-            audioStream._resolve = null;
-            audioStream._sendAudio = (chunk) => {
-              if (audioStream._resolve) {
-                audioStream._resolve(chunk);
-                audioStream._resolve = null;
-              }
-            };
-            audioStream._end = () => {
-              if (audioStream._resolve) {
-                audioStream._resolve(null);
-                audioStream._resolve = null;
+            // Store audio stream controller for sending audio
+            awsTranscribeStream._sendAudio = (chunk) => {
+              if (audioStreamController && !audioStreamEnded) {
+                audioStreamController.resolve(chunk);
+                audioStreamController = null;
               }
             };
             
-            // Store reference to audio stream for sending audio
-            awsTranscribeStream._audioStream = audioStream;
+            awsTranscribeStream._end = () => {
+              audioStreamEnded = true;
+              if (audioStreamController) {
+                audioStreamController.resolve(null);
+                audioStreamController = null;
+              }
+            };
             
             // Process transcription results
             (async () => {
               try {
+                console.log('Server: Starting AWS Transcribe result processing...');
                 for await (const event of awsTranscribeStream) {
+                  console.log('Server: AWS Transcribe event received:', JSON.stringify(event, null, 2));
+                  
                   if (event.TranscriptEvent) {
                     const results = event.TranscriptEvent.Transcript.Results;
+                    console.log('Server: AWS Transcribe results:', results);
+                    
                     if (results && results.length > 0) {
                       for (const result of results) {
                         if (result.Alternatives && result.Alternatives.length > 0) {
                           const transcript = result.Alternatives[0].Transcript;
                           const isPartial = result.IsPartial;
+                          
+                          console.log(`Server: AWS Transcribe raw transcript: "${transcript}", isPartial: ${isPartial}`);
                           
                           if (transcript && transcript.trim() !== '') {
                             console.log(`Server: AWS Transcribe transcript received [${isPartial ? 'PARTIAL' : 'FINAL'}]:`, transcript);
@@ -1068,6 +1086,8 @@ wss.on('connection', (ws) => {
                       type: 'aws_error',
                       error: event.LimitExceededException.Message || 'Limit exceeded'
                     }));
+                  } else {
+                    console.log('Server: AWS Transcribe unknown event type:', Object.keys(event));
                   }
                 }
               } catch (streamError) {
@@ -1172,10 +1192,10 @@ wss.on('connection', (ws) => {
           }
         }
         
-        if (awsTranscribeStream && awsTranscribeStream._audioStream) {
+        if (awsTranscribeStream && awsTranscribeStream._sendAudio) {
           try {
             // Send audio to AWS Transcribe
-            awsTranscribeStream._audioStream._sendAudio(audioBuffer);
+            awsTranscribeStream._sendAudio(audioBuffer);
             console.log("Server: PCM16 audio sent to AWS Transcribe");
           } catch (error) {
             console.error("Server: Error sending audio to AWS Transcribe:", error);
@@ -1261,8 +1281,8 @@ wss.on('connection', (ws) => {
         if (awsTranscribeStream) {
           try {
             // End AWS Transcribe stream
-            if (awsTranscribeStream._audioStream) {
-              awsTranscribeStream._audioStream._end();
+            if (awsTranscribeStream._end) {
+              awsTranscribeStream._end();
             }
             awsTranscribeStream = null;
             console.log("Server: AWS Transcribe connection cleaned up");
@@ -1346,8 +1366,8 @@ wss.on('connection', (ws) => {
     if (awsTranscribeStream) {
       try {
         // End AWS Transcribe stream
-        if (awsTranscribeStream._audioStream) {
-          awsTranscribeStream._audioStream._end();
+        if (awsTranscribeStream._end) {
+          awsTranscribeStream._end();
         }
         awsTranscribeStream = null;
         console.log("Server: AWS Transcribe connection cleaned up");
