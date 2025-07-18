@@ -204,6 +204,48 @@ Uses Levenshtein distance algorithm to calculate:
 WER = (Substitutions + Deletions + Insertions) / Total Reference Words × 100%
 ```
 
+## 🔄 Re-enabling Amazon Transcribe (Optional)
+
+Amazon Transcribe support has been commented out but can be easily restored if needed. To re-enable:
+
+### 1. Uncomment Code
+**Server.js:**
+- Uncomment the AWS SDK import (line ~11)
+- Uncomment AWS credentials configuration (lines ~40-44)
+- Uncomment AWS client initialization (lines ~57-65)
+- Uncomment AWS stream variable (line ~396)
+- Uncomment entire AWS connection setup block (lines ~984-1118)
+- Uncomment AWS audio sending code (lines ~1194-1201)
+- Uncomment AWS cleanup code (lines ~1280-1290)
+- Change "septa" back to "octa" in stop message (line ~1205)
+
+**Client.js:**
+- Uncomment AWS model info in `modelInfo` object (lines ~139-144)
+- Uncomment AWS status, transcript, and error handling cases (lines ~540-545, ~589-594, ~650-657)
+- Uncomment `updateAWSTranscriptAppend()` function (lines ~821-851)
+
+**Index.html:**
+- Add back: `<option value="aws">Amazon Transcribe</option>` to the dropdown
+
+**Style.css:**
+- Uncomment all `.aws-panel` CSS rules (search for "aws-panel" and uncomment)
+
+### 2. Add Environment Variables
+Add to your `.env` file:
+```env
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+AWS_SESSION_TOKEN=your_aws_session_token
+AWS_REGION=us-east-1
+```
+
+### 3. Set Up AWS Credentials
+1. Set up [AWS IAM credentials](https://console.aws.amazon.com/iam/)
+2. Ensure permissions for Amazon Transcribe service
+3. Add credentials to `.env` as shown above
+
+After these changes, you'll have all 8 STT services available again.
+
 ## 🐛 Troubleshooting
 
 ### Common Issues
