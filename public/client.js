@@ -137,12 +137,12 @@ function switchComparisonModel() {
       wordLabel: 'Microsoft Words',
       werLabel: 'Microsoft WER'
     },
-    aws: {
-      title: 'Amazon Transcribe',
-      panelClass: 'aws-panel',
-      wordLabel: 'Amazon Words',
-      werLabel: 'Amazon WER'
-    }
+      // aws: {
+  //   title: 'Amazon Transcribe',
+  //   panelClass: 'aws-panel',
+  //   wordLabel: 'Amazon Words',
+  //   werLabel: 'Amazon WER'
+  // }
   };
   
   const info = modelInfo[selectedModel];
@@ -538,13 +538,13 @@ function handleServerMessage(data) {
       }
       break;
       
-    case 'aws_status':
-      if (data.status === 'connected' && currentComparisonModel === 'aws') {
-        comparisonStatus.textContent = 'Connected';
-        comparisonStatus.classList.add('connected');
-        console.log("Client: Amazon Transcribe connected");
-      }
-      break;
+    // case 'aws_status':
+    //   if (data.status === 'connected' && currentComparisonModel === 'aws') {
+    //     comparisonStatus.textContent = 'Connected';
+    //     comparisonStatus.classList.add('connected');
+    //     console.log("Client: Amazon Transcribe connected");
+    //   }
+    //   break;
       
       //transcripts
     case 'deepgram_transcript':
@@ -587,11 +587,11 @@ function handleServerMessage(data) {
       }
       break;
       
-    case 'aws_transcript':
-      if (currentComparisonModel === 'aws') {
-        updateAWSTranscriptAppend(data.data);
-      }
-      break;
+    // case 'aws_transcript':
+    //   if (currentComparisonModel === 'aws') {
+    //     updateAWSTranscriptAppend(data.data);
+    //   }
+    //   break;
       
       //error handling
     case 'deepgram_error':
@@ -648,13 +648,13 @@ function handleServerMessage(data) {
       }
       break;
       
-    case 'aws_error':
-      if (currentComparisonModel === 'aws') {
-        console.error("Client: Amazon Transcribe error:", data.error);
-        comparisonStatus.textContent = 'Error';
-        comparisonStatus.classList.remove('connected');
-      }
-      break;
+    // case 'aws_error':
+    //   if (currentComparisonModel === 'aws') {
+    //     console.error("Client: Amazon Transcribe error:", data.error);
+    //     comparisonStatus.textContent = 'Error';
+    //     comparisonStatus.classList.remove('connected');
+    //   }
+    //   break;
   }
 }
 
@@ -819,36 +819,36 @@ function updateMicrosoftTranscriptAppend(data) {
 }
 
 // APPEND MODE - Update Amazon Transcribe transcript display
-function updateAWSTranscriptAppend(data) {
-  if (data.text && data.text.trim() !== "") {
-    const isFinal = data.is_final || false;
-    console.log("Client: Amazon Transcribe transcript:", data.text, isFinal ? "(final)" : "(interim)");
-    
-    // Track first response time only
-    if (!comparisonFirstResponse && recordingStartTime) {
-      comparisonFirstResponse = Date.now() - recordingStartTime;
-      console.log("Amazon Transcribe first response time:", comparisonFirstResponse + "ms");
-    }
-    
-    if (isFinal) {
-      // Add final transcript to the list
-      comparisonTranscripts.push(data.text);
-      
-      // Update total word count
-      const newWords = countWords(data.text);
-      comparisonTotalWords += newWords;
-      
-      // Clear interim transcript
-      comparisonInterimTranscript = "";
-    } else {
-      // Update interim transcript
-      comparisonInterimTranscript = data.text;
-    }
-    
-    updateComparisonDisplayAppend();
-    updateStats();
-  }
-}
+// function updateAWSTranscriptAppend(data) {
+//   if (data.text && data.text.trim() !== "") {
+//     const isFinal = data.is_final || false;
+//     console.log("Client: Amazon Transcribe transcript:", data.text, isFinal ? "(final)" : "(interim)");
+//     
+//     // Track first response time only
+//     if (!comparisonFirstResponse && recordingStartTime) {
+//       comparisonFirstResponse = Date.now() - recordingStartTime;
+//       console.log("Amazon Transcribe first response time:", comparisonFirstResponse + "ms");
+//     }
+//     
+//     if (isFinal) {
+//       // Add final transcript to the list
+//       comparisonTranscripts.push(data.text);
+//       
+//       // Update total word count
+//       const newWords = countWords(data.text);
+//       comparisonTotalWords += newWords;
+//       
+//       // Clear interim transcript
+//       comparisonInterimTranscript = "";
+//     } else {
+//       // Update interim transcript
+//       comparisonInterimTranscript = data.text;
+//     }
+//     
+//     updateComparisonDisplayAppend();
+//     updateStats();
+//   }
+// }
 
 // APPEND MODE - Update Deepgram transcript display
 function updateDeepgramTranscriptAppend(data) {

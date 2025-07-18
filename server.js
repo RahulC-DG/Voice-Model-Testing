@@ -8,7 +8,7 @@ const { RealtimeClient } = require("@speechmatics/real-time-client");
 const { createSpeechmaticsJWT } = require("@speechmatics/auth");
 const speech = require('@google-cloud/speech');
 const sdk = require('microsoft-cognitiveservices-speech-sdk');
-const { TranscribeStreamingClient, StartStreamTranscriptionCommand } = require('@aws-sdk/client-transcribe-streaming');
+// const { TranscribeStreamingClient, StartStreamTranscriptionCommand } = require('@aws-sdk/client-transcribe-streaming');
 const dotenv = require("dotenv");
 const multer = require("multer");
 const ffmpeg = require("fluent-ffmpeg");
@@ -39,10 +39,10 @@ const MICROSOFT_API_KEY = process.env.MICROSOFT_API_KEY;
 const MICROSOFT_SPEECH_ENDPOINT = process.env.MICROSOFT_SPEECH_ENDPOINT;
 
 // AWS Transcribe credentials
-const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
-const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
-const AWS_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN;
-const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+// const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
+// const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+// const AWS_SESSION_TOKEN = process.env.AWS_SESSION_TOKEN;
+// const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
 // Initialize Cartesia client
 const cartesiaClient = new CartesiaClient({
@@ -55,14 +55,14 @@ const googleSpeechClient = new speech.SpeechClient({
 });
 
 // Initialize AWS Transcribe client
-const awsTranscribeClient = new TranscribeStreamingClient({
-  region: AWS_REGION,
-  credentials: {
-    accessKeyId: AWS_ACCESS_KEY_ID,
-    secretAccessKey: AWS_SECRET_ACCESS_KEY,
-    sessionToken: AWS_SESSION_TOKEN,
-  },
-});
+// const awsTranscribeClient = new TranscribeStreamingClient({
+//   region: AWS_REGION,
+//   credentials: {
+//     accessKeyId: AWS_ACCESS_KEY_ID,
+//     secretAccessKey: AWS_SECRET_ACCESS_KEY,
+//     sessionToken: AWS_SESSION_TOKEN,
+//   },
+// });
 
 // Helper function to extract region from Microsoft endpoint
 function extractRegionFromEndpoint(endpoint) {
@@ -394,7 +394,7 @@ wss.on('connection', (ws) => {
   let openaiConnection = null;
   let microsoftConnection = null;
   let microsoftPushStream = null;
-  let awsTranscribeStream = null;
+  // let awsTranscribeStream = null;
   
   ws.on('message', async (message) => {
     try {
@@ -983,139 +983,139 @@ wss.on('connection', (ws) => {
         }
         
         // Start Amazon Transcribe Streaming connection
-        try {
-          if (AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY) {
-            // Create a more robust audio stream implementation
-            let audioStreamController;
-            let audioStreamEnded = false;
-            
-            const audioStream = async function* () {
-              try {
-                while (!audioStreamEnded) {
-                  const chunk = await new Promise((resolve, reject) => {
-                    audioStreamController = { resolve, reject };
-                  });
-                  
-                  if (chunk === null || audioStreamEnded) {
-                    break;
-                  }
-                  
-                  console.log(`Server: AWS Transcribe sending audio chunk: ${chunk.length} bytes`);
-                  yield { AudioEvent: { AudioChunk: chunk } };
-                }
-              } catch (error) {
-                console.error('Server: AWS Transcribe audio stream error:', error);
-              }
-            };
-            
-            const command = new StartStreamTranscriptionCommand({
-              LanguageCode: 'en-US',
-              MediaEncoding: 'pcm',
-              MediaSampleRateHertz: 16000,
-              AudioStream: audioStream(),
-            });
-            
-            console.log('Server: Starting AWS Transcribe stream...');
-            const response = await awsTranscribeClient.send(command);
-            awsTranscribeStream = response.TranscriptResultStream;
-            
-            // Store audio stream controller for sending audio
-            awsTranscribeStream._sendAudio = (chunk) => {
-              if (audioStreamController && !audioStreamEnded) {
-                audioStreamController.resolve(chunk);
-                audioStreamController = null;
-              }
-            };
-            
-            awsTranscribeStream._end = () => {
-              audioStreamEnded = true;
-              if (audioStreamController) {
-                audioStreamController.resolve(null);
-                audioStreamController = null;
-              }
-            };
-            
-            // Process transcription results
-            (async () => {
-              try {
-                console.log('Server: Starting AWS Transcribe result processing...');
-                for await (const event of awsTranscribeStream) {
-                  console.log('Server: AWS Transcribe event received:', JSON.stringify(event, null, 2));
-                  
-                  if (event.TranscriptEvent) {
-                    const results = event.TranscriptEvent.Transcript.Results;
-                    console.log('Server: AWS Transcribe results:', results);
-                    
-                    if (results && results.length > 0) {
-                      for (const result of results) {
-                        if (result.Alternatives && result.Alternatives.length > 0) {
-                          const transcript = result.Alternatives[0].Transcript;
-                          const isPartial = result.IsPartial;
-                          
-                          console.log(`Server: AWS Transcribe raw transcript: "${transcript}", isPartial: ${isPartial}`);
-                          
-                          if (transcript && transcript.trim() !== '') {
-                            console.log(`Server: AWS Transcribe transcript received [${isPartial ? 'PARTIAL' : 'FINAL'}]:`, transcript);
-                            
-                            ws.send(JSON.stringify({
-                              type: 'aws_transcript',
-                              data: {
-                                text: transcript,
-                                is_final: !isPartial
-                              }
-                            }));
-                          }
-                        }
-                      }
-                    }
-                  } else if (event.BadRequestException) {
-                    console.error('Server: AWS Transcribe BadRequestException:', event.BadRequestException);
-                    ws.send(JSON.stringify({
-                      type: 'aws_error',
-                      error: event.BadRequestException.Message || 'Bad request'
-                    }));
-                  } else if (event.InternalFailureException) {
-                    console.error('Server: AWS Transcribe InternalFailureException:', event.InternalFailureException);
-                    ws.send(JSON.stringify({
-                      type: 'aws_error',
-                      error: event.InternalFailureException.Message || 'Internal failure'
-                    }));
-                  } else if (event.LimitExceededException) {
-                    console.error('Server: AWS Transcribe LimitExceededException:', event.LimitExceededException);
-                    ws.send(JSON.stringify({
-                      type: 'aws_error',
-                      error: event.LimitExceededException.Message || 'Limit exceeded'
-                    }));
-                  } else {
-                    console.log('Server: AWS Transcribe unknown event type:', Object.keys(event));
-                  }
-                }
-              } catch (streamError) {
-                console.error('Server: AWS Transcribe stream error:', streamError);
-                ws.send(JSON.stringify({
-                  type: 'aws_error',
-                  error: streamError.message || 'Stream error'
-                }));
-              }
-            })();
-            
-            console.log('Server: Amazon Transcribe Streaming connection initialized');
-            ws.send(JSON.stringify({
-              type: 'aws_status',
-              status: 'connected'
-            }));
-            
-          } else {
-            console.warn('Server: AWS credentials not configured');
-          }
-          
-        } catch (error) {
-          console.error("Server: Failed to create AWS Transcribe connection:", error);
-          ws.send(JSON.stringify({
-            type: 'aws_error',
-            error: error.message
-          }));
-        }
+        // try {
+        //   if (AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY) {
+        //     // Create a more robust audio stream implementation
+        //     let audioStreamController;
+        //     let audioStreamEnded = false;
+        //     
+        //     const audioStream = async function* () {
+        //       try {
+        //         while (!audioStreamEnded) {
+        //           const chunk = await new Promise((resolve, reject) => {
+        //             audioStreamController = { resolve, reject };
+        //           });
+        //           
+        //           if (chunk === null || audioStreamEnded) {
+        //             break;
+        //           }
+        //           
+        //           console.log(`Server: AWS Transcribe sending audio chunk: ${chunk.length} bytes`);
+        //           yield { AudioEvent: { AudioChunk: chunk } };
+        //         }
+        //       } catch (error) {
+        //         console.error('Server: AWS Transcribe audio stream error:', error);
+        //       }
+        //     };
+        //     
+        //     const command = new StartStreamTranscriptionCommand({
+        //       LanguageCode: 'en-US',
+        //       MediaEncoding: 'pcm',
+        //       MediaSampleRateHertz: 16000,
+        //       AudioStream: audioStream(),
+        //     });
+        //     
+        //     console.log('Server: Starting AWS Transcribe stream...');
+        //     const response = await awsTranscribeClient.send(command);
+        //     awsTranscribeStream = response.TranscriptResultStream;
+        //     
+        //     // Store audio stream controller for sending audio
+        //     awsTranscribeStream._sendAudio = (chunk) => {
+        //       if (audioStreamController && !audioStreamEnded) {
+        //         audioStreamController.resolve(chunk);
+        //         audioStreamController = null;
+        //       }
+        //     };
+        //     
+        //     awsTranscribeStream._end = () => {
+        //       audioStreamEnded = true;
+        //       if (audioStreamController) {
+        //         audioStreamController.resolve(null);
+        //         audioStreamController = null;
+        //       }
+        //     };
+        //     
+        //     // Process transcription results
+        //     (async () => {
+        //       try {
+        //         console.log('Server: Starting AWS Transcribe result processing...');
+        //         for await (const event of awsTranscribeStream) {
+        //           console.log('Server: AWS Transcribe event received:', JSON.stringify(event, null, 2));
+        //           
+        //           if (event.TranscriptEvent) {
+        //             const results = event.TranscriptEvent.Transcript.Results;
+        //             console.log('Server: AWS Transcribe results:', results);
+        //             
+        //             if (results && results.length > 0) {
+        //               for (const result of results) {
+        //                 if (result.Alternatives && result.Alternatives.length > 0) {
+        //                   const transcript = result.Alternatives[0].Transcript;
+        //                   const isPartial = result.IsPartial;
+        //                   
+        //                   console.log(`Server: AWS Transcribe raw transcript: "${transcript}", isPartial: ${isPartial}`);
+        //                   
+        //                   if (transcript && transcript.trim() !== '') {
+        //                     console.log(`Server: AWS Transcribe transcript received [${isPartial ? 'PARTIAL' : 'FINAL'}]:`, transcript);
+        //                     
+        //                     ws.send(JSON.stringify({
+        //                       type: 'aws_transcript',
+        //                       data: {
+        //                         text: transcript,
+        //                         is_final: !isPartial
+        //                       }
+        //                     }));
+        //                   }
+        //                 }
+        //               }
+        //             }
+        //           } else if (event.BadRequestException) {
+        //             console.error('Server: AWS Transcribe BadRequestException:', event.BadRequestException);
+        //             ws.send(JSON.stringify({
+        //               type: 'aws_error',
+        //               error: event.BadRequestException.Message || 'Bad request'
+        //             }));
+        //           } else if (event.InternalFailureException) {
+        //             console.error('Server: AWS Transcribe InternalFailureException:', event.InternalFailureException);
+        //             ws.send(JSON.stringify({
+        //               type: 'aws_error',
+        //               error: event.InternalFailureException.Message || 'Internal failure'
+        //             }));
+        //           } else if (event.LimitExceededException) {
+        //             console.error('Server: AWS Transcribe LimitExceededException:', event.LimitExceededException);
+        //             ws.send(JSON.stringify({
+        //               type: 'aws_error',
+        //               error: event.LimitExceededException.Message || 'Limit exceeded'
+        //             }));
+        //           } else {
+        //             console.log('Server: AWS Transcribe unknown event type:', Object.keys(event));
+        //           }
+        //         }
+        //       } catch (streamError) {
+        //         console.error('Server: AWS Transcribe stream error:', streamError);
+        //         ws.send(JSON.stringify({
+        //           type: 'aws_error',
+        //           error: streamError.message || 'Stream error'
+        //         }));
+        //       }
+        //     })();
+        //     
+        //     console.log('Server: Amazon Transcribe Streaming connection initialized');
+        //     ws.send(JSON.stringify({
+        //       type: 'aws_status',
+        //       status: 'connected'
+        //     }));
+        //     
+        //   } else {
+        //     console.warn('Server: AWS credentials not configured');
+        //   }
+        //   
+        // } catch (error) {
+        //   console.error("Server: Failed to create AWS Transcribe connection:", error);
+        //   ws.send(JSON.stringify({
+        //     type: 'aws_error',
+        //     error: error.message
+        //   }));
+        // }
       }
       
       if (data.type === 'audio' && data.audio) {
@@ -1192,19 +1192,19 @@ wss.on('connection', (ws) => {
           }
         }
         
-        if (awsTranscribeStream && awsTranscribeStream._sendAudio) {
-          try {
-            // Send audio to AWS Transcribe
-            awsTranscribeStream._sendAudio(audioBuffer);
-            console.log("Server: PCM16 audio sent to AWS Transcribe");
-          } catch (error) {
-            console.error("Server: Error sending audio to AWS Transcribe:", error);
-          }
-        }
+        // if (awsTranscribeStream && awsTranscribeStream._sendAudio) {
+        //   try {
+        //     // Send audio to AWS Transcribe
+        //     awsTranscribeStream._sendAudio(audioBuffer);
+        //     console.log("Server: PCM16 audio sent to AWS Transcribe");
+        //   } catch (error) {
+        //     console.error("Server: Error sending audio to AWS Transcribe:", error);
+        //   }
+        // }
       }
       
       if (data.type === 'stop') {
-        console.log('Stopping octa transcription services...');
+        console.log('Stopping septa transcription services...');
         
         if (deepgramConnection) {
           deepgramConnection.finish();
@@ -1278,18 +1278,18 @@ wss.on('connection', (ws) => {
           }
         }
         
-        if (awsTranscribeStream) {
-          try {
-            // End AWS Transcribe stream
-            if (awsTranscribeStream._end) {
-              awsTranscribeStream._end();
-            }
-            awsTranscribeStream = null;
-            console.log("Server: AWS Transcribe connection cleaned up");
-          } catch (error) {
-            console.error("Server: Error cleaning up AWS Transcribe connection:", error);
-          }
-        }
+        // if (awsTranscribeStream) {
+        //   try {
+        //     // End AWS Transcribe stream
+        //     if (awsTranscribeStream._end) {
+        //       awsTranscribeStream._end();
+        //     }
+        //     awsTranscribeStream = null;
+        //     console.log("Server: AWS Transcribe connection cleaned up");
+        //   } catch (error) {
+        //     console.error("Server: Error cleaning up AWS Transcribe connection:", error);
+        //   }
+        // }
       }
       
     } catch (error) {
