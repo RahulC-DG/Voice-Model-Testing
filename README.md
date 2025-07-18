@@ -206,7 +206,11 @@ WER = (Substitutions + Deletions + Insertions) / Total Reference Words × 100%
 
 ## 🔄 Re-enabling Amazon Transcribe (Optional)
 
-Amazon Transcribe support has been commented out but can be easily restored if needed. To re-enable:
+Amazon Transcribe support has been commented out but can be easily restored if needed. 
+
+**Note:** AWS was removed primarily because AWS session tokens refresh every 12 hours, requiring frequent credential updates for continuous operation. This makes it less suitable for long-running demo applications.
+
+To re-enable:
 
 ### 1. Uncomment Code
 **Server.js:**
